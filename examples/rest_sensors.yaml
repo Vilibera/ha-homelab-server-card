@@ -1,0 +1,81 @@
+# REST sensors that feed the Homelab Server Card from Prometheus.
+# Add to configuration.yaml:   rest: !include rest_sensors.yaml
+# Replace PROMETHEUS_URL with your Prometheus address, e.g. http://prometheus.local:9090
+#
+# Every series is tagged with a label `m` so the card knows which metric it is.
+# Adjust the mountpoint and network-interface regexes to match your machines.
+
+- resource: http://PROMETHEUS_URL/api/v1/query
+  scan_interval: 30
+  timeout: 15
+  params:
+    query: >-
+      label_replace(100 * (1 - avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[2m]))), "m", "cpu", "", "")
+      or label_replace(count by (instance) (node_cpu_seconds_total{mode="idle"}), "m", "cores", "", "")
+      or label_replace(node_load1, "m", "load", "", "")
+      or label_replace(100 * (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes), "m", "ram", "", "")
+      or label_replace(node_memory_MemTotal_bytes, "m", "ram_total", "", "")
+      or label_replace(max by (instance) (node_hwmon_temp_celsius{chip=~"thermal_.*|platform_coretemp_.*"}), "m", "temp", "", "")
+      or label_replace(100 * (1 - node_filesystem_avail_bytes{mountpoint=~"/|/srv/storage|/backup"} / node_filesystem_size_bytes{mountpoint=~"/|/srv/storage|/backup"}), "m", "disk", "", "")
+      or label_replace(node_filesystem_size_bytes{mountpoint=~"/|/srv/storage|/backup"}, "m", "disk_size", "", "")
+      or label_replace(sum by (instance) (rate(node_network_receive_bytes_total{device=~"eth0|ens18|eno1"}[2m])), "m", "rx", "", "")
+      or label_replace(sum by (instance) (rate(node_network_transmit_bytes_total{device=~"eth0|ens18|eno1"}[2m])), "m", "tx", "", "")
+      or label_replace(time() - node_boot_time_seconds, "m", "uptime", "", "")
+      or label_replace(up{job="node"}, "m", "up", "", "")
+      or label_replace(max by (instance, chip) (node_hwmon_temp_celsius{chip=~"nvme_.*"}), "m", "nvme_temp", "", "")
+      or label_replace(smartmon_temperature_celsius_raw_value, "m", "disk_temp", "", "")
+      or label_replace(smartmon_device_smart_healthy, "m", "disk_ok", "", "")
+      or label_replace({__name__=~"rpi_(undervoltage|throttling)(_boot)?"}, "m", "$1", "__name__", "rpi_(.*)")
+  sensor:
+    - name: Homelab metrics
+      unique_id: homelab_metrics
+      value_template: "{{ value_json.data.result | length }}"
+      json_attributes_path: "$.data"
+      json_attributes:
+        - result
+
+# CPU history for the sparklines (6 h, 10 min steps)
+- resource: http://PROMETHEUS_URL/api/v1/query
+  scan_interval: 300
+  timeout: 20
+  params:
+    query: >-
+      (100 * (1 - avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m]))))[6h:10m]
+  sensor:
+    - name: Homelab CPU history
+      unique_id: homelab_cpu_history
+      value_template: "{{ value_json.data.result | length }}"
+      json_attributes_path: "$.data"
+      json_attributes:
+        - result
+
+# Network history for the sparklines
+- resource: http://PROMETHEUS_URL/api/v1/query
+  scan_interval: 300
+  timeout: 20
+  params:
+    query: >-
+      (sum by (instance) (rate(node_network_receive_bytes_total{device=~"eth0|ens18|eno1"}[5m]) + rate(node_network_transmit_bytes_total{device=~"eth0|ens18|eno1"}[5m])))[6h:10m]
+  sensor:
+    - name: Homelab network history
+      unique_id: homelab_network_history
+      value_template: "{{ value_json.data.result | length }}"
+      json_attributes_path: "$.data"
+      json_attributes:
+        - result
+
+# Optional: backups (Proxmox Backup Server + Borg + restore drills).
+# Use ONE selector, not `or`: `or` drops series whose labels collide.
+- resource: http://PROMETHEUS_URL/api/v1/query
+  scan_interval: 60
+  timeout: 15
+  params:
+    query: >-
+      {__name__=~"pbs_.*|homelab_borg_.*|homelab_restore_drill_.*|homelab_pbs_verify_drill_.*"}
+  sensor:
+    - name: Homelab backups
+      unique_id: homelab_backups
+      value_template: "{{ value_json.data.result | length }}"
+      json_attributes_path: "$.data"
+      json_attributes:
+        - result

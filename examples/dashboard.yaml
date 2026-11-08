@@ -1,0 +1,88 @@
+# Example dashboard view. Works best as a "panel" view (full width).
+# Every section except `metrics` and `hosts` is optional.
+title: Homelab
+views:
+  - title: Homelab
+    path: homelab
+    icon: mdi:server
+    type: panel
+    cards:
+      - type: custom:homelab-server-card
+        title: Homelab
+        metrics: sensor.homelab_metrics
+        cpu_history: sensor.homelab_cpu_history
+        net_history: sensor.homelab_network_history
+        backups: sensor.homelab_backups          # optional
+        backup_max_age_h: 36
+        borg_max_age_h: 26
+        speedtest:                               # optional, Speedtest.net integration
+          download: sensor.speedtest_download
+          upload: sensor.speedtest_upload
+          ping: sensor.speedtest_ping
+        links:
+          - { name: Grafana, url: "https://grafana.example.com", icon: chart-areaspline }
+          - { name: Proxmox, url: "https://pve.example.lan:8006", icon: server }
+        hosts:
+          - name: Proxmox
+            role: Hypervisor
+            ip: 10.0.0.10
+            instance: "10.0.0.10:9100"       # must match the Prometheus `instance` label
+            icon: server
+            color: "#fb923c"
+            disks:
+              - { name: NVMe SSD, dev: /dev/nvme0, chip: nvme_nvme0, icon: expansion-card }
+              - { name: HDD 1 TB, dev: /dev/sda, icon: harddisk }
+          - name: Docker VM
+            role: Containers
+            ip: 10.0.0.20
+            instance: "10.0.0.20:9100"
+            icon: docker
+            color: "#38bdf8"
+          - name: NAS
+            role: File server
+            ip: 10.0.0.30
+            instance: "10.0.0.30:9100"
+            icon: folder-network
+            color: "#facc15"
+            storage: { /srv/storage: Storage pool }
+          - name: Home Assistant
+            role: Home automation
+            ha: true                           # uses Supervisor API + System Monitor
+            icon: home-assistant
+            color: "#41bdf5"
+            sensors:
+              cpu: sensor.system_monitor_processor_use
+              ram: sensor.system_monitor_memory_usage
+              ram_used: sensor.system_monitor_memory_use
+              rx: sensor.system_monitor_network_throughput_in_eth0
+              tx: sensor.system_monitor_network_throughput_out_eth0
+              load: sensor.system_monitor_load_1_min
+          - name: Raspberry Pi
+            role: Prometheus & Grafana
+            ip: 10.0.0.40
+            instance: "10.0.0.40:9100"
+            icon: raspberry-pi
+            color: "#f472b6"
+            power: true                        # shows undervoltage / throttling
+          - name: Backup server
+            role: Proxmox Backup Server
+            ip: 10.0.0.50
+            instance: "10.0.0.50:9100"
+            icon: backup-restore
+            color: "#34d399"
+            backup: true
+            storage: { /backup: Backup disk }
+        borg_repos:
+          pve-host: { name: Proxmox host, icon: server, color: "#fb923c" }
+          docker: { name: Docker VM, icon: docker, color: "#38bdf8" }
+        restore_vms:
+          "100": { name: Docker }
+          "101": { name: Home Assistant }
+          "102": { name: NAS, quarterly: true }
+        portainer_url: "http://10.0.0.20:9000"
+        services:                              # matched against Portainer container names (regex)
+          - { name: Immich, desc: Photos, icon: image-multiple, match: immich, color: "#f472b6" }
+          - { name: Paperless-ngx, desc: Documents, icon: file-document-multiple, match: paperless, color: "#4ade80" }
+          - { name: Vaultwarden, desc: Passwords, icon: shield-key, match: "vaultwarden|bitwarden", color: "#60a5fa" }
+          - { name: Pi-hole, desc: DNS filtering, icon: pi-hole, match: "pihole|pi-hole", color: "#f87171" }
+          - { name: Caddy, desc: Reverse proxy, icon: swap-horizontal-bold, match: caddy, color: "#34d399" }

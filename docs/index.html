@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Homelab Server Card – live demo</title>
+<meta name="description" content="Live demo of Homelab Server Card, a Home Assistant Lovelace card for Prometheus, Proxmox, Proxmox Backup Server, Borg and Portainer.">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@mdi/font@7.4.47/css/materialdesignicons.min.css">
+<style>
+  html,body{margin:0;background:#123e5e}
+  .banner{font:500 13px Roboto,system-ui,sans-serif;color:#fff;background:#0b1220;padding:8px 14px;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap}
+  .banner a{color:#93c5fd}
+</style>
+</head>
+<body>
+<div class="banner"><span>Live demo with sample data. Nothing here is connected to a real server.</span><a href="https://github.com/Vilibera/ha-homelab-server-card">View on GitHub →</a></div>
+<homelab-server-card id="card"></homelab-server-card>
+<script>
+  // Minimal stand-in for Home Assistant's <ha-icon>, using the MDI webfont.
+  customElements.define("ha-icon", class extends HTMLElement {
+    static get observedAttributes() { return ["icon"]; }
+    connectedCallback() { this.render(); }
+    attributeChangedCallback() { this.render(); }
+    render() {
+      const name = (this.getAttribute("icon") || "").replace("mdi:", "");
+      if (!this.shadowRoot) this.attachShadow({ mode: "open" });
+      this.shadowRoot.innerHTML = `<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@mdi/font@7.4.47/css/materialdesignicons.min.css"><span class="mdi mdi-${name}" style="font-size:var(--mdc-icon-size,24px);line-height:1;display:inline-flex"></span>`;
+    }
+  });
+</script>
+<script type="module">
+  await import("../homelab-server-card.js");
+
+  const now = Date.now() / 1000;
+  const iso = new Date().toISOString();
+  const rnd = (a, b) => a + Math.random() * (b - a);
+  const series = (n, base, amp) => Array.from({ length: n }, (_, i) => [now - (n - i) * 600, String(Math.max(0, base + Math.sin(i / 4) * amp + rnd(-amp, amp) / 2))]);
+
+  const hosts = {
+    "10.0.0.10:9100": { cpu: 23, cores: 12, load: 1.42, ram: 61, ram_total: 64e9, temp: 48, rx: 2.1e6, tx: 0.9e6, uptime: 38 * 86400, up: 1, disk: { "/": 34 }, size: { "/": 500e9 } },
+    "10.0.0.20:9100": { cpu: 14, cores: 6, load: 0.81, ram: 72, ram_total: 16e9, rx: 1.4e6, tx: 3.2e6, uptime: 12 * 86400, up: 1, disk: { "/": 58 }, size: { "/": 200e9 } },
+    "10.0.0.30:9100": { cpu: 3, cores: 2, load: 0.12, ram: 28, ram_total: 4e9, rx: 0.3e6, tx: 0.1e6, uptime: 38 * 86400, up: 1, disk: { "/": 21, "/srv/storage": 67 }, size: { "/": 32e9, "/srv/storage": 2e12 } },
+    "10.0.0.40:9100": { cpu: 9, cores: 4, load: 0.35, ram: 44, ram_total: 8e9, temp: 52, rx: 0.4e6, tx: 0.2e6, uptime: 5 * 86400, up: 1, disk: { "/": 41 }, size: { "/": 64e9 } },
+    "10.0.0.50:9100": { cpu: 2, cores: 4, load: 0.05, ram: 31, ram_total: 8e9, rx: 0.1e6, tx: 0.05e6, uptime: 20 * 86400, up: 1, disk: { "/": 18, "/backup": 46 }, size: { "/": 32e9, "/backup": 1e12 } },
+  };
+  const result = [];
+  const push = (metric, v) => result.push({ metric, value: [now, String(v)] });
+  for (const [instance, h] of Object.entries(hosts)) {
+    for (const k of ["cpu", "cores", "load", "ram", "ram_total", "temp", "rx", "tx", "uptime", "up"]) if (h[k] != null) push({ instance, m: k }, h[k]);
+    for (const [mp, p] of Object.entries(h.disk)) { push({ instance, m: "disk", mountpoint: mp }, p); push({ instance, m: "disk_size", mountpoint: mp }, h.size[mp]); }
+  }
+  push({ instance: "10.0.0.10:9100", m: "nvme_temp", chip: "nvme_nvme0" }, 41);
+  push({ instance: "10.0.0.10:9100", m: "disk_ok", disk: "/dev/nvme0" }, 1);
+  push({ instance: "10.0.0.10:9100", m: "disk_ok", disk: "/dev/sda" }, 1);
+  push({ instance: "10.0.0.10:9100", m: "disk_temp", disk: "/dev/sda" }, 35);
+  push({ instance: "10.0.0.40:9100", m: "undervoltage" }, 0); push({ instance: "10.0.0.40:9100", m: "undervoltage_boot" }, 0);
+  push({ instance: "10.0.0.40:9100", m: "throttling" }, 0); push({ instance: "10.0.0.40:9100", m: "throttling_boot" }, 0);
+
+  const hist = (base, amp) => Object.keys(hosts).map((instance) => ({ metric: { instance }, values: series(36, base * rnd(0.3, 1.5), amp) }));
+
+  const bk = [];
+  const b = (name, labels, v) => bk.push({ metric: { __name__: name, ...labels }, value: [now, String(v)] });
+  b("pbs_datastore_used_bytes", { store: "main" }, 412e9); b("pbs_datastore_total_bytes", { store: "main" }, 1e12);
+  b("pbs_datastore_index_bytes", { store: "main" }, 3.1e12); b("pbs_datastore_disk_bytes", { store: "main" }, 380e9);
+  b("pbs_datastore_snapshots", { store: "main" }, 42);
+  for (const [id, name, size, up] of [["100", "docker", 64e9, 1.8e9], ["101", "homeassistant", 32e9, 0.4e9], ["102", "nas", 40e9, 0.2e9]]) {
+    const l = { store: "main", type: "vm", id, name };
+    b("pbs_guest_snapshots", l, 14); b("pbs_guest_last_snapshot_timestamp_seconds", l, now - 7 * 3600);
+    b("pbs_backup_last_success", l, 1); b("pbs_backup_last_duration_seconds", l, rnd(60, 400));
+    b("pbs_backup_last_upload_bytes", l, up); b("pbs_backup_last_source_bytes", l, size);
+  }
+  for (const repo of ["pve-host", "docker", "nas"]) {
+    const l = { repo, host: repo };
+    b("homelab_borg_backup_last_success", l, 1); b("homelab_borg_backup_last_success_timestamp_seconds", l, now - 6 * 3600);
+    b("homelab_borg_backup_last_duration_seconds", l, rnd(20, 200)); b("homelab_borg_archives", l, Math.round(rnd(20, 60)));
+    b("homelab_borg_backup_last_files", l, Math.round(rnd(1500, 90000))); b("homelab_borg_backup_last_deduplicated_bytes", l, rnd(1e6, 90e6));
+    b("homelab_borg_backup_last_original_bytes", l, rnd(1e9, 9e9)); b("homelab_borg_repo_unique_compressed_bytes", l, rnd(2e9, 12e9));
+    b("homelab_borg_restore_test_last_success", l, 1); b("homelab_borg_restore_test_last_run_timestamp_seconds", l, now - 6 * 3600);
+    b("homelab_borg_restore_test_duration_seconds", l, rnd(3, 15));
+    b("homelab_borg_drill_last_success", l, 1); b("homelab_borg_drill_last_run_timestamp_seconds", l, now - 6 * 86400);
+    b("homelab_borg_drill_files_ok", l, 50); b("homelab_borg_drill_files_checked", l, 50); b("homelab_borg_drill_duration_seconds", l, rnd(20, 60));
+  }
+  for (const vmid of ["100", "101"]) { const l = { vmid, mode: "monthly" }; b("homelab_restore_drill_vm_success", l, 1); b("homelab_restore_drill_vm_last_run_timestamp_seconds", l, now - 6 * 86400); b("homelab_restore_drill_vm_duration_seconds", l, rnd(200, 600)); }
+  b("homelab_pbs_verify_drill_success", { store: "main" }, 1); b("homelab_pbs_verify_drill_last_run_timestamp_seconds", { store: "main" }, now - 6 * 86400); b("homelab_pbs_verify_drill_duration_seconds", { store: "main" }, 1800);
+  b("pbs_exporter_last_run_timestamp_seconds", {}, now - 120);
+
+  const st = (state, attributes = {}) => ({ state: String(state), attributes, last_updated: iso, last_changed: iso });
+  const containers = ["immich_server", "immich_postgres", "paperless", "vaultwarden", "pihole", "caddy", "grafana", "uptime-kuma"];
+  const states = {
+    "sensor.homelab_metrics": st(result.length, { result }),
+    "sensor.homelab_cpu_history": st(5, { result: hist(15, 6) }),
+    "sensor.homelab_network_history": st(5, { result: hist(1.5e6, 6e5) }),
+    "sensor.homelab_backups": st(bk.length, { result: bk }),
+    "sensor.speedtest_download": st(487.3, { unit_of_measurement: "Mbit/s" }),
+    "sensor.speedtest_upload": st(96.1, { unit_of_measurement: "Mbit/s" }),
+    "sensor.speedtest_ping": st(4, { unit_of_measurement: "ms" }),
+    "sensor.system_monitor_processor_use": st(7), "sensor.system_monitor_memory_usage": st(46), "sensor.system_monitor_memory_use": st(1900),
+    "sensor.system_monitor_network_throughput_in_eth0": st(0.08), "sensor.system_monitor_network_throughput_out_eth0": st(0.03), "sensor.system_monitor_load_1_min": st(0.4),
+  };
+  const entities = {}; const devices = {};
+  containers.forEach((name, i) => {
+    devices[`d${i}`] = { name, via_device_id: "portainer" };
+    const id = `sensor.${name.replace(/-/g, "_")}_state`;
+    entities[id] = { entity_id: id, platform: "portainer", device_id: `d${i}` };
+    states[id] = st(name === "uptime-kuma" ? "exited" : "running");
+  });
+
+  const haHist = (id, base, amp) => series(72, base, amp).map(([t, v]) => ({ s: v, lu: t }));
+  const hass = {
+    states, entities, devices,
+    config: { version: "2026.11.1" },
+    callWS: async (msg) => {
+      if (msg.type === "lovelace/resources") return [];
+      if (msg.type === "supervisor/api") {
+        if (msg.endpoint === "/host/info") return { disk_used: 18.4, disk_total: 64, boot_timestamp: (Date.now() - 9 * 86400e3) * 1000 };
+        if (msg.endpoint === "/core/stats") return { cpu_percent: 3, memory_percent: 20, memory_usage: 9e8, memory_limit: 4.1e9, online_cpus: 2 };
+        if (msg.endpoint === "/os/info") return { version: "16.3" };
+      }
+      if (msg.type === "history/history_during_period") return Object.fromEntries(msg.entity_ids.map((id) => [id, id.includes("processor") ? haHist(id, 8, 4) : haHist(id, 0.06, 0.03)]));
+      throw new Error("not mocked");
+    },
+  };
+
+  const config = {
+    title: "Homelab", metrics: "sensor.homelab_metrics", cpu_history: "sensor.homelab_cpu_history", net_history: "sensor.homelab_network_history",
+    backups: "sensor.homelab_backups",
+    speedtest: { download: "sensor.speedtest_download", upload: "sensor.speedtest_upload", ping: "sensor.speedtest_ping" },
+    links: [{ name: "Grafana", url: "#", icon: "chart-areaspline" }, { name: "Proxmox", url: "#", icon: "server" }, { name: "Portainer", url: "#", icon: "docker" }],
+    hosts: [
+      { name: "Proxmox", role: "Hypervisor", ip: "10.0.0.10", instance: "10.0.0.10:9100", icon: "server", color: "#fb923c",
+        disks: [{ name: "NVMe SSD", dev: "/dev/nvme0", chip: "nvme_nvme0", icon: "expansion-card" }, { name: "HDD 1 TB", dev: "/dev/sda", icon: "harddisk" }] },
+      { name: "Docker VM", role: "Containers", ip: "10.0.0.20", instance: "10.0.0.20:9100", icon: "docker", color: "#38bdf8" },
+      { name: "NAS", role: "File server", ip: "10.0.0.30", instance: "10.0.0.30:9100", icon: "folder-network", color: "#facc15", storage: { "/srv/storage": "Storage pool" } },
+      { name: "Home Assistant", role: "Home automation", ha: true, icon: "home-assistant", color: "#41bdf5",
+        sensors: { cpu: "sensor.system_monitor_processor_use", ram: "sensor.system_monitor_memory_usage", ram_used: "sensor.system_monitor_memory_use", rx: "sensor.system_monitor_network_throughput_in_eth0", tx: "sensor.system_monitor_network_throughput_out_eth0", load: "sensor.system_monitor_load_1_min" } },
+      { name: "Raspberry Pi", role: "Prometheus & Grafana", ip: "10.0.0.40", instance: "10.0.0.40:9100", icon: "raspberry-pi", color: "#f472b6", power: true },
+      { name: "Backup server", role: "Proxmox Backup Server", ip: "10.0.0.50", instance: "10.0.0.50:9100", icon: "backup-restore", color: "#34d399", backup: true, storage: { "/backup": "Backup disk" } },
+    ],
+    borg_repos: { "pve-host": { name: "Proxmox host", icon: "server", color: "#fb923c" }, docker: { name: "Docker VM", icon: "docker", color: "#38bdf8" }, nas: { name: "NAS", icon: "folder-network", color: "#facc15" } },
+    restore_vms: { "100": { name: "Docker" }, "101": { name: "Home Assistant" }, "102": { name: "NAS", quarterly: true } },
+    services: [
+      { name: "Immich", desc: "Photos", icon: "image-multiple", match: "immich", color: "#f472b6" },
+      { name: "Paperless-ngx", desc: "Documents", icon: "file-document-multiple", match: "paperless", color: "#4ade80" },
+      { name: "Vaultwarden", desc: "Passwords", icon: "shield-key", match: "vaultwarden", color: "#60a5fa" },
+      { name: "Pi-hole", desc: "DNS filtering", icon: "pi-hole", match: "pihole", color: "#f87171" },
+      { name: "Caddy", desc: "Reverse proxy", icon: "swap-horizontal-bold", match: "caddy", color: "#34d399" },
+      { name: "Uptime Kuma", desc: "Status checks", icon: "heart-pulse", match: "uptime", color: "#a78bfa" },
+    ],
+  };
+  const card = document.getElementById("card");
+  card.setConfig(config);
+  card.hass = hass;
+</script>
+</body>
+</html>
