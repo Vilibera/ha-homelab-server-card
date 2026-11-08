@@ -6,7 +6,7 @@
  * Backups: Proxmox Backup Server (pbs_*) and Borg (homelab_borg_*) metrics in Prometheus.
  * License: MIT */
 
-const VERSION = "1.0.0";
+const VERSION = "1.0.1";
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const icon = (name, cls = "") => `<ha-icon class="${cls}" icon="mdi:${name}"></ha-icon>`;
 const num = (v) => (v == null || isNaN(v) ? null : Number(v));
